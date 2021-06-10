@@ -1,5 +1,5 @@
 {
-  "name": "prosemirror-history",
+  "name": "prosemirror-history-v2",
   "version": "1.1.3",
   "description": "Undo history for ProseMirror",
   "main": "dist/index.js",
@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git://github.com/prosemirror/prosemirror-history.git"
+    "url": "git://github.com/orange030/prosemirror-history.git"
   },
   "dependencies": {
     "prosemirror-state": "^1.2.2",

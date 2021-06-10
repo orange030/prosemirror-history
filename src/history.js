@@ -45,7 +45,7 @@ class Branch {
       mapFrom = remap.maps.length
     }
     let transform = state.tr
-    let selection, remaining
+    let selection, remaining, nextSelection
     let addAfter = [], addBefore = []
 
     this.items.forEach((item, i) => {
@@ -75,23 +75,24 @@ class Branch {
 
       if (item.selection) {
         selection = remap ? item.selection.map(remap.slice(mapFrom)) : item.selection
+        nextSelection = remap ? item.nextSelection.map(remap.slice(mapFrom)) : item.nextSelection
         remaining = new Branch(this.items.slice(0, end).append(addBefore.reverse().concat(addAfter)), this.eventCount - 1)
         return false
       }
     }, this.items.length, 0)
 
-    return {remaining, transform, selection}
+    return {remaining, transform, selection, nextSelection}
   }
 
   // : (Transform, ?SelectionBookmark, Object) → Branch
   // Create a new branch with the given transform added.
-  addTransform(transform, selection, histOptions, preserveItems) {
+  addTransform(transform, selection, nextSelection, histOptions, preserveItems) {
     let newItems = [], eventCount = this.eventCount
     let oldItems = this.items, lastItem = !preserveItems && oldItems.length ? oldItems.get(oldItems.length - 1) : null
 
     for (let i = 0; i < transform.steps.length; i++) {
       let step = transform.steps[i].invert(transform.docs[i])
-      let item = new Item(transform.mapping.maps[i], step, selection), merged
+      let item = new Item(transform.mapping.maps[i], step, selection, nextSelection), merged
       if (merged = lastItem && lastItem.merge(item)) {
         item = merged
         if (i) newItems.pop()
@@ -223,7 +224,7 @@ function cutOffEvents(items, n) {
 }
 
 class Item {
-  constructor(map, step, selection, mirrorOffset) {
+  constructor(map, step, selection, nextSelection, mirrorOffset) {
     // The (forward) step map for this item.
     this.map = map
     // The inverted step
@@ -232,6 +233,7 @@ class Item {
     // this selection is the starting selection for the group (the one
     // that was active before the first step was applied)
     this.selection = selection
+    this.nextSelection = nextSelection
     // If this item is the inverse of a previous mapping on the stack,
     // this points at the inverse's offset
     this.mirrorOffset = mirrorOffset
@@ -240,7 +242,7 @@ class Item {
   merge(other) {
     if (this.step && other.step && !other.selection) {
       let step = other.step.merge(this.step)
-      if (step) return new Item(step.getMap().invert(), step, this.selection)
+      if (step) return new Item(step.getMap().invert(), step, this.selection, this.nextSelection)
     }
   }
 }
@@ -261,7 +263,7 @@ const DEPTH_OVERFLOW = 20
 
 // : (HistoryState, EditorState, Transaction, Object)
 // Record a transformation in undo history.
-function applyTransaction(history, state, tr, options) {
+function applyTransaction(history, oldState, newState, tr, options) {
   let historyTr = tr.getMeta(historyKey), rebased
   if (historyTr) return historyTr.historyState
 
@@ -273,18 +275,18 @@ function applyTransaction(history, state, tr, options) {
     return history
   } else if (appended && appended.getMeta(historyKey)) {
     if (appended.getMeta(historyKey).redo)
-      return new HistoryState(history.done.addTransform(tr, null, options, mustPreserveItems(state)),
+      return new HistoryState(history.done.addTransform(tr, null, null, options, mustPreserveItems(oldState)),
                               history.undone, rangesFor(tr.mapping.maps[tr.steps.length - 1]), history.prevTime)
     else
-      return new HistoryState(history.done, history.undone.addTransform(tr, null, options, mustPreserveItems(state)),
+      return new HistoryState(history.done, history.undone.addTransform(tr, null, null, options, mustPreserveItems(oldState)),
                               null, history.prevTime)
   } else if (tr.getMeta("addToHistory") !== false && !(appended && appended.getMeta("addToHistory") === false)) {
     // Group transforms that occur in quick succession into one event.
     let newGroup = history.prevTime == 0 || !appended && (history.prevTime < (tr.time || 0) - options.newGroupDelay ||
                                                           !isAdjacentTo(tr, history.prevRanges))
     let prevRanges = appended ? mapRanges(history.prevRanges, tr.mapping) : rangesFor(tr.mapping.maps[tr.steps.length - 1])
-    return new HistoryState(history.done.addTransform(tr, newGroup ? state.selection.getBookmark() : null,
-                                                      options, mustPreserveItems(state)),
+    return new HistoryState(history.done.addTransform(tr, newGroup ? oldState.selection.getBookmark() : null, newGroup ? newState.selection.getBookmark() : null,
+                                                      options, mustPreserveItems(oldState)),
                             Branch.empty, prevRanges, tr.time)
   } else if (rebased = tr.getMeta("rebased")) {
     // Used by the collab module to tell the history that some of its
@@ -336,7 +338,7 @@ function histTransaction(history, state, dispatch, redo) {
   if (!pop) return
 
   let selection = pop.selection.resolve(pop.transform.doc)
-  let added = (redo ? history.done : history.undone).addTransform(pop.transform, state.selection.getBookmark(),
+  let added = (redo ? history.done : history.undone).addTransform(pop.transform, pop.nextSelection, pop.selection,
                                                                   histOptions, preserveItems)
 
   let newHist = new HistoryState(redo ? added : pop.remaining, redo ? pop.remaining : added, null, 0)
@@ -402,8 +404,8 @@ export function history(config) {
       init() {
         return new HistoryState(Branch.empty, Branch.empty, null, 0)
       },
-      apply(tr, hist, state) {
-        return applyTransaction(hist, state, tr, config)
+      apply(tr, hist, oldState , newState) {
+        return applyTransaction(hist, oldState, newState, tr, config)
       }
     },
 

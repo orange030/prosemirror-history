@@ -25,3 +25,11 @@ We aim to be an inclusive, welcoming community. To make that explicit,
 we have a [code of
 conduct](http://contributor-covenant.org/version/1/1/0/) that applies
 to communication around the project.
+
+修改原始的undo redo逻辑, 记录每次修改前后的选区, 用于redo时选区的恢复, 替代原始的当前state的 state.selection.getBookmark
+
+执行undo前更改选区位置, 将不会对重做后的选区造成影响
+
+Modify undo/redo logic. Record old and new selection when doc was changed instead of state.selection.getBookmark()
+
+Selection will not be affected by the selection changing before executing undo
